@@ -28,20 +28,22 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Verify evaluator syntax
-        run: node --check experiments/stateforge-equal-model/run.mjs
+      - name: Verify committed evaluator and strict launcher
+        run: |
+          node --check experiments/stateforge-equal-model/run.mjs
+          node --check experiments/stateforge-equal-model/strict-runner.mjs
 
-      - name: Run paired sealed evaluation
+      - name: Run strict paired sealed evaluation
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          node experiments/stateforge-equal-model/run.mjs \
+          node experiments/stateforge-equal-model/strict-runner.mjs \
             --provider github-models \
-            --model openai/gpt-4o-mini \
+            --model openai/gpt-4.1-mini \
             --runs 3 \
             --actions 2 \
             --maxRequests 140 \
-            --requestGapMs 4300 \
+            --requestGapMs 7000 \
             --output artifacts/stateforge-equal-model
 
       - name: Upload complete evidence
