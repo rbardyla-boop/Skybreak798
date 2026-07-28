@@ -1,0 +1,117 @@
+name: Ollama score sensitivity check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "ollama-score-runner.mjs"
+      - ".github/workflows/ollama-score-sensitivity-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  score-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check launcher syntax
+        run: node --check ollama-score-runner.mjs
+
+      - name: Start deterministic native Ollama mock
+        run: |
+          cat > /tmp/stateforge-score-mock.mjs <<'NODE'
+          import http from 'node:http';
+          let requests = 0;
+          const aliases = ['A','B','C','D'];
+          const server = http.createServer((req, res) => {
+            let body = '';
+            req.on('data', c => body += c);
+            req.on('end', () => {
+              try {
+                requests++;
+                const parsed = JSON.parse(body);
+                if (req.url !== '/api/chat') throw new Error(`url=${req.url}`);
+                if (parsed.stream !== false) throw new Error('stream must be false');
+                const props = parsed.format?.properties?.scores?.properties;
+                const order = Object.keys(props ?? {});
+                if (order.length !== 4 || new Set(order).size !== 4) throw new Error(`score properties=${order}`);
+                const user = parsed.messages?.find(m => m.role === 'user')?.content ?? '';
+                const arch = /ARCHITECTURE WRAPPER: (stateforge|loop|static)/.exec(user)?.[1] ?? 'loop';
+                const fixed = /fixedGraphRecommendation\":\"([ABCD])\"/.exec(user)?.[1];
+                let top;
+                if (arch === 'static' && fixed) top = fixed;
+                else if (arch === 'stateforge') top = order[(requests + 1) % 4];
+                else top = order[(requests + 2) % 4];
+                const ranking = [top, ...order.filter(a => a !== top)];
+                const scores = {};
+                ranking.forEach((a, i) => scores[a] = 0.9 - i * 0.3);
+                const content = JSON.stringify({ scores, note: `mock-${arch}` });
+                res.writeHead(200, { 'content-type': 'application/json' });
+                res.end(JSON.stringify({
+                  model: parsed.model,
+                  message: { role: 'assistant', content },
+                  done: true,
+                  prompt_eval_count: Math.ceil(body.length / 4),
+                  eval_count: 28
+                }));
+              } catch (error) {
+                res.writeHead(500, { 'content-type': 'application/json' });
+                res.end(JSON.stringify({ error: error.message }));
+              }
+            });
+          });
+          server.listen(18082, '127.0.0.1');
+          NODE
+          node /tmp/stateforge-score-mock.mjs >/tmp/stateforge-score-mock.log 2>&1 &
+          sleep 1
+
+      - name: Execute 90-call sensitivity preflight
+        run: |
+          rm -rf /tmp/stateforge-score-check
+          node ollama-score-runner.mjs \
+            --provider ollama-native \
+            --baseUrl http://127.0.0.1:18082/api \
+            --model mock \
+            --runs 1 \
+            --episodes 30 \
+            --batchSize 1 \
+            --actions 2 \
+            --maxRequests 90 \
+            --maxOutputTokens 128 \
+            --inputTokenLimit 500000 \
+            --outputTokenLimit 50000 \
+            --requestTimeoutMs 60000 \
+            --wallLimitMs 600000 \
+            --output /tmp/stateforge-score-check
+
+      - name: Verify sensitivity and finalisation
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const crypto = require('crypto');
+          const path = '/tmp/stateforge-score-check';
+          const r = JSON.parse(fs.readFileSync(`${path}/results.json`, 'utf8'));
+          const m = JSON.parse(fs.readFileSync(`${path}/run-manifest.json`, 'utf8'));
+          const p = JSON.parse(fs.readFileSync(`${path}/partial-results.json`, 'utf8'));
+          const f = JSON.parse(fs.readFileSync(`${path}/FINALIZED.json`, 'utf8'));
+          if (r.evaluator !== 'stateforge-local-score-sensitivity-v3') throw new Error(r.evaluator);
+          if (r.requestLedger.length !== 90) throw new Error(`requests=${r.requestLedger.length}`);
+          if (!r.sensitivity?.gates?.allPassed) throw new Error(JSON.stringify(r.sensitivity, null, 2));
+          if ([r.status,m.status,p.status,f.status].some(s => s === 'running')) throw new Error('terminal artifact remained running');
+          if (new Set([r.status,m.status,p.status,f.status]).size !== 1) throw new Error('terminal statuses disagree');
+          if (!r.requestLedger.every(x => typeof x.rawResponse === 'string')) throw new Error('raw responses missing');
+          const lines = fs.readFileSync(`${path}/checksums.sha256`, 'utf8').trim().split('\n');
+          for (const line of lines) {
+            const [expected, file] = line.split(/\s{2}/);
+            const actual = crypto.createHash('sha256').update(fs.readFileSync(`${path}/${file}`)).digest('hex');
+            if (actual !== expected) throw new Error(`checksum mismatch ${file}`);
+          }
+          console.log(JSON.stringify({status:r.status, sensitivity:r.sensitivity, finalized:f}, null, 2));
+          NODE

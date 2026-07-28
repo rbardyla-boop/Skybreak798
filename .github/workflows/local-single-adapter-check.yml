@@ -1,0 +1,85 @@
+name: Local single-observation adapter check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "local-single-runner.mjs"
+      - ".github/workflows/local-single-adapter-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  adapter-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check source syntax
+        run: |
+          node --check local-single-runner.mjs
+          node --check experiments/stateforge-equal-model/run.mjs
+
+      - name: Start deterministic OpenAI-compatible mock
+        run: |
+          cat > /tmp/stateforge-mock.mjs <<'NODE'
+          import http from 'node:http';
+          const server = http.createServer((req, res) => {
+            let body = '';
+            req.on('data', c => body += c);
+            req.on('end', () => {
+              const content = JSON.stringify({ decisions: [{ ranking: ['EMBER','TIDE','LENS','GATE'], note: 'mock' }] });
+              res.writeHead(200, { 'content-type': 'application/json' });
+              res.end(JSON.stringify({
+                id: 'mock', object: 'chat.completion', model: 'mock',
+                choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+                usage: { prompt_tokens: Math.ceil(body.length / 4), completion_tokens: 24, total_tokens: Math.ceil(body.length / 4) + 24 }
+              }));
+            });
+          });
+          server.listen(18080, '127.0.0.1');
+          NODE
+          node /tmp/stateforge-mock.mjs >/tmp/stateforge-mock.log 2>&1 &
+          echo $! >/tmp/stateforge-mock.pid
+          sleep 1
+
+      - name: Generate and execute adapter
+        run: |
+          rm -rf /tmp/stateforge-adapter-check
+          node local-single-runner.mjs \
+            --provider openai-compatible \
+            --baseUrl http://127.0.0.1:18080/v1 \
+            --model mock \
+            --jsonMode true \
+            --runs 1 \
+            --episodes 2 \
+            --batchSize 1 \
+            --actions 2 \
+            --maxRequests 6 \
+            --maxOutputTokens 128 \
+            --inputTokenLimit 100000 \
+            --outputTokenLimit 10000 \
+            --requestTimeoutMs 60000 \
+            --wallLimitMs 600000 \
+            --output /tmp/stateforge-adapter-check
+
+      - name: Verify orchestration and evidence
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const r = JSON.parse(fs.readFileSync('/tmp/stateforge-adapter-check/results.json', 'utf8'));
+          if (r.errors.length) throw new Error(JSON.stringify(r.errors));
+          if (r.runs.length !== 1) throw new Error(`runs=${r.runs.length}`);
+          if (r.requestLedger.length !== 6) throw new Error(`requests=${r.requestLedger.length}`);
+          for (const a of ['stateforge','loop','static']) {
+            if (r.runs[0].metrics[a].modelCalls !== 2) throw new Error(`${a} calls=${r.runs[0].metrics[a].modelCalls}`);
+            if (r.runs[0].integrity[a].unloggedControlTransitions !== 0) throw new Error(`${a} unlogged transition`);
+          }
+          console.log(JSON.stringify({status:r.status, requests:r.requestLedger.length, integrity:r.aggregate.integrity}, null, 2));
+          NODE
