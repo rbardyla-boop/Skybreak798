@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: stateforge-equal-model-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   sealed-evaluation:
