@@ -16,11 +16,16 @@ function replaceOne(label, pattern, replacement) {
   source = source.replace(pattern, replacement);
 }
 
-replaceOne('version', /const EVAL_VERSION = 'stateforge-equal-model-v1';/, "const EVAL_VERSION = 'stateforge-equal-model-v3-json-strict';");
+replaceOne('version', /const EVAL_VERSION = 'stateforge-equal-model-v1';/, "const EVAL_VERSION = 'stateforge-equal-model-v4-ordered-json-strict';");
 replaceOne(
   'JSON response mode',
   /temperature: 0, max_tokens: this\.requestOutputTokens/,
   "temperature: 0, response_format: { type: 'json_object' }, max_tokens: this.requestOutputTokens"
+);
+replaceOne(
+  'ordered tool schema',
+  /'Return strict JSON with shape \{"decisions":\[\{"episodeId":"\.\.\.","ranking":\["EMBER","TIDE","LENS","GATE"\],"note":"optional compact memory"\}\]\}\.',/,
+  `'Return strict JSON with shape {"decisions":[{"ranking":["EMBER","TIDE","LENS","GATE"],"note":"optional compact memory"}]}. Return exactly one decision per public observation, in the exact supplied array order. Do not echo episode identifiers.',`
 );
 replaceOne(
   'model-call failures',
@@ -30,12 +35,12 @@ replaceOne(
 replaceOne(
   'missing decision fallback',
   /const decision = decisionsByArch\[archName\]\.get\(episodeSpec\.id\) \?\? fallbackDecision\(episodeSpec\.id\);/,
-  `const decision = decisionsByArch[archName].get(episodeSpec.id);\n        if (!decision) throw new Error(\`Missing strict decision for \${episodeSpec.id} from \${archName}\`);`
+  `const decision = decisionsByArch[archName].get(episodeSpec.id);\n        if (!decision) throw new Error(\`Missing strict ordered decision for \${episodeSpec.id} from \${archName}\`);`
 );
 replaceOne(
-  'strict response parser',
+  'strict ordered response parser',
   /function parseDecisions\(text, batch, archName, modelFailures\) \{[\s\S]*?\n\}\n\s*function fallbackDecision\(id\) \{[^\n]*\}\n/,
-  `function parseDecisions(text, batch, archName) {\n  let parsed;\n  try { parsed = JSON.parse(extractJson(text)); }\n  catch (error) { throw new Error(\`\${archName} returned malformed JSON: \${error.message}\`); }\n  if (!Array.isArray(parsed.decisions)) throw new Error(\`\${archName} response has no decisions array\`);\n  const map = new Map();\n  for (const ep of batch) {\n    const matches = parsed.decisions.filter(d => d?.episodeId === ep.id);\n    if (matches.length !== 1) throw new Error(\`\${archName} returned \${matches.length} decisions for \${ep.id}\`);\n    const raw = matches[0];\n    if (!Array.isArray(raw.ranking) || raw.ranking.length !== ACTIONS.length) throw new Error(\`\${archName} returned an incomplete ranking for \${ep.id}\`);\n    const normalized = raw.ranking.map(v => String(v).toUpperCase());\n    if (new Set(normalized).size !== ACTIONS.length || normalized.some(v => !ACTIONS.includes(v))) throw new Error(\`\${archName} returned an invalid ranking for \${ep.id}\`);\n    map.set(ep.id, { episodeId: ep.id, familyId: ep.familyId, ranking: normalized, note: typeof raw.note === 'string' ? raw.note.slice(0, 500) : '' });\n  }\n  return map;\n}\n`
+  `function parseDecisions(text, batch, archName) {\n  let parsed;\n  try { parsed = JSON.parse(extractJson(text)); }\n  catch (error) { throw new Error(\`\${archName} returned malformed JSON: \${error.message}\`); }\n  if (!Array.isArray(parsed.decisions)) throw new Error(\`\${archName} response has no decisions array\`);\n  if (parsed.decisions.length !== batch.length) throw new Error(\`\${archName} returned \${parsed.decisions.length} ordered decisions for \${batch.length} observations\`);\n  const map = new Map();\n  for (let i = 0; i < batch.length; i++) {\n    const ep = batch[i];\n    const raw = parsed.decisions[i];\n    if (!Array.isArray(raw?.ranking) || raw.ranking.length !== ACTIONS.length) throw new Error(\`\${archName} returned an incomplete ranking at ordered index \${i}\`);\n    const normalized = raw.ranking.map(v => String(v).toUpperCase());\n    if (new Set(normalized).size !== ACTIONS.length || normalized.some(v => !ACTIONS.includes(v))) throw new Error(\`\${archName} returned an invalid ranking at ordered index \${i}\`);\n    map.set(ep.id, { episodeId: ep.id, familyId: ep.familyId, ranking: normalized, note: typeof raw.note === 'string' ? raw.note.slice(0, 500) : '' });\n  }\n  return map;\n}\n`
 );
 replaceOne(
   'zero model failures gate',
