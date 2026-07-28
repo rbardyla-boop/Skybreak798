@@ -29,6 +29,11 @@ replaceOne(
   `const model = argv.model ?? process.env.STATEFORGE_MODEL ?? DEFAULT_MODEL;\nconst baseUrl = argv.baseUrl ?? process.env.STATEFORGE_BASE_URL ?? 'http://127.0.0.1:11434/v1';\nconst apiKey = argv.apiKey ?? process.env.STATEFORGE_API_KEY ?? '';\nconst jsonMode = String(argv.jsonMode ?? process.env.STATEFORGE_JSON_MODE ?? 'false').toLowerCase() === 'true';`
 );
 replaceOne(
+  'smoke-test ordinal control',
+  /const maxOrdinal = 13;/,
+  `const maxOrdinal = intArg(argv.ordinals, 13);`
+);
+replaceOne(
   'ordered output contract',
   /'Return strict JSON with shape \{"decisions":\[\{"episodeId":"\.\.\.","ranking":\["EMBER","TIDE","LENS","GATE"\],"note":"optional compact memory"\}\]\}\.',/,
   `'Return strict JSON with shape {"decisions":[{"ranking":["EMBER","TIDE","LENS","GATE"],"note":"optional compact memory"}]}. Return exactly one decision per public observation, in the exact supplied array order. Do not echo episode identifiers.',`
