@@ -39,11 +39,11 @@ jobs:
         run: |
           node experiments/stateforge-equal-model/strict-runner.mjs \
             --provider github-models \
-            --model openai/gpt-4.1-mini \
+            --model openai/gpt-4.1-nano \
             --runs 3 \
             --actions 2 \
             --maxRequests 140 \
-            --requestGapMs 7000 \
+            --requestGapMs 8000 \
             --output artifacts/stateforge-equal-model
 
       - name: Upload complete evidence
