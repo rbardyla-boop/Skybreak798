@@ -1,0 +1,45 @@
+name: Dump score runner source
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/dump-score-source.yml"
+      - "ollama-score-runner.mjs"
+
+permissions:
+  contents: read
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Print relevant generated source sections
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const zlib = require('zlib');
+          const launcher = fs.readFileSync('ollama-score-runner.mjs', 'utf8');
+          const m = launcher.match(/const payload = '([^']+)'/);
+          if (!m) throw new Error('payload not found');
+          const source = zlib.gunzipSync(Buffer.from(m[1], 'base64')).toString('utf8');
+          const markers = [
+            'const EVAL_VERSION',
+            'async function executeRun',
+            'function buildPrompt',
+            'class ModelClient',
+            'function parseDecisions',
+            'function computeSensitivity',
+            'function analyseSensitivity',
+            'sensitivity ='
+          ];
+          for (const marker of markers) {
+            const i = source.indexOf(marker);
+            console.log(`\n===== ${marker} @ ${i} =====`);
+            if (i >= 0) console.log(source.slice(Math.max(0, i - 500), i + 5000));
+          }
+          NODE
