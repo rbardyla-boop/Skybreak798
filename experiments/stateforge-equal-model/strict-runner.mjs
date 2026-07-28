@@ -16,7 +16,12 @@ function replaceOne(label, pattern, replacement) {
   source = source.replace(pattern, replacement);
 }
 
-replaceOne('version', /const EVAL_VERSION = 'stateforge-equal-model-v1';/, "const EVAL_VERSION = 'stateforge-equal-model-v2-strict';");
+replaceOne('version', /const EVAL_VERSION = 'stateforge-equal-model-v1';/, "const EVAL_VERSION = 'stateforge-equal-model-v3-json-strict';");
+replaceOne(
+  'JSON response mode',
+  /temperature: 0, max_tokens: this\.requestOutputTokens/,
+  "temperature: 0, response_format: { type: 'json_object' }, max_tokens: this.requestOutputTokens"
+);
 replaceOne(
   'model-call failures',
   /\s*const callStarted = performance\.now\(\);[\s\S]*?budget\.consumeCall\(response\);\s*decisionsByArch\[archName\] = parseDecisions\(response\.text, publicBatch, archName, modelFailures\);/,
