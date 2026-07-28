@@ -1,0 +1,54 @@
+name: StateForge equal-model sealed evaluation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "experiments/stateforge-equal-model/**"
+      - ".github/workflows/stateforge-equal-model.yml"
+
+permissions:
+  contents: read
+  models: read
+
+concurrency:
+  group: stateforge-equal-model-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  sealed-evaluation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout frozen evaluator
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify evaluator syntax
+        run: node --check experiments/stateforge-equal-model/run.mjs
+
+      - name: Run paired sealed evaluation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node experiments/stateforge-equal-model/run.mjs \
+            --provider github-models \
+            --model openai/gpt-4o-mini \
+            --runs 3 \
+            --actions 2 \
+            --maxRequests 140 \
+            --requestGapMs 4300 \
+            --output artifacts/stateforge-equal-model
+
+      - name: Upload complete evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stateforge-equal-model-evidence
+          path: artifacts/stateforge-equal-model
+          if-no-files-found: warn
+          retention-days: 30
