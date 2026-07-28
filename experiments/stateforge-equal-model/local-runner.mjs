@@ -34,6 +34,11 @@ replaceOne(
   `const maxOrdinal = intArg(argv.ordinals, 13);`
 );
 replaceOne(
+  'equal local wall-time control',
+  /const wallLimitMs = 22 \* 60 \* 1000;/,
+  `const wallLimitMs = intArg(argv.wallLimitMs, 22 * 60 * 1000);`
+);
+replaceOne(
   'ordered output contract',
   /'Return strict JSON with shape \{"decisions":\[\{"episodeId":"\.\.\.","ranking":\["EMBER","TIDE","LENS","GATE"\],"note":"optional compact memory"\}\]\}\.',/,
   `'Return strict JSON with shape {"decisions":[{"ranking":["EMBER","TIDE","LENS","GATE"],"note":"optional compact memory"}]}. Return exactly one decision per public observation, in the exact supplied array order. Do not echo episode identifiers.',`
