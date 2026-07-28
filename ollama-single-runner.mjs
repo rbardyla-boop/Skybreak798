@@ -103,18 +103,6 @@ replaceOne(
         outputTokens: body.eval_count ?? estimateTokens(text),`
 );
 
-replaceOne(
-  'diagnostic incomplete response',
-  /throw new Error\(\\`\\$\{archName\} returned an incomplete ranking at ordered index \\$\{i\}\\`\);/,
-  'throw new Error(`\\${archName} returned an incomplete ranking at ordered index \\${i}; response=\\${text.slice(0, 500)}`);'
-);
-
-replaceOne(
-  'diagnostic invalid response',
-  /throw new Error\(\\`\\$\{archName\} returned an invalid ranking at ordered index \\$\{i\}\\`\);/,
-  'throw new Error(`\\${archName} returned an invalid ranking at ordered index \\${i}; response=\\${text.slice(0, 500)}`);'
-);
-
 fs.writeFileSync(output, source);
 execFileSync(process.execPath, ['--check', output], { stdio: 'inherit' });
 console.log(`OLLAMA_SCHEMA_ADAPTER_SHA256 ${crypto.createHash('sha256').update(source).digest('hex')}`);
