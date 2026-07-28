@@ -30,7 +30,12 @@ replaceOne(
 const baseUrl = argv.baseUrl ?? process.env.STATEFORGE_BASE_URL ?? 'http://127.0.0.1:11434/v1';
 const apiKey = argv.apiKey ?? process.env.STATEFORGE_API_KEY ?? '';
 const jsonMode = String(argv.jsonMode ?? process.env.STATEFORGE_JSON_MODE ?? 'true').toLowerCase() === 'true';
-const batchSize = Math.max(1, intArg(argv.batchSize, 1));
+const batchSize = Math.max(1, intArg(argv.batchSize, 1));`
+);
+replaceOne(
+  'episode limit placement',
+  /const episodesPerRun = 100;/,
+  `const episodesPerRun = 100;
 const episodeLimit = Math.max(1, Math.min(episodesPerRun, intArg(argv.episodes, episodesPerRun)));`
 );
 replaceOne(
